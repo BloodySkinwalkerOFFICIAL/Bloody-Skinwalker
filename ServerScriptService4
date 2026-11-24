@@ -1,0 +1,105 @@
+-- Server Script. REQUIRED Workspace hierarchy:
+-- Workspace/BS_Railway/Lever (BasePart), EntranceDoor (BasePart),
+-- Echoer (Model with Humanoid and HumanoidRootPart), SubwayFinish (BasePart).
+-- Echoer model is a placeholder: replace with your own original rig.
+local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Config = require(ReplicatedStorage:WaitForChild("BS_ExpansionConfig"))
+local railway = workspace:WaitForChild("BS_Railway")
+local lever = railway:WaitForChild("Lever")
+local door = railway:WaitForChild("EntranceDoor")
+local echoer = railway:WaitForChild("Echoer")
+local finish = railway:WaitForChild("SubwayFinish")
+local humanoid = echoer:WaitForChild("Humanoid")
+local root = echoer:WaitForChild("HumanoidRootPart")
+local startPivot = echoer:GetPivot()
+local activePlayer = nil
+local sequenceId = 0
+local completed = {}
+local prompt = lever:FindFirstChildOfClass("ProximityPrompt") or Instance.new("ProximityPrompt")
+prompt.ActionText = "Pull hidden lever"
+prompt.ObjectText = "Underground Railway"
+prompt.MaxActivationDistance = Config.InteractionDistance
+prompt.HoldDuration = 1
+prompt.RequiresLineOfSight = true
+prompt.Parent = lever
+
+local function notify(player, message)
+    local event = ReplicatedStorage:FindFirstChild("BS_StoryNotice")
+    if event and player and player.Parent == Players then event:FireClient(player, message) end
+end
+local function award(player, badgeName)
+    local awards = game:GetService("ServerScriptService"):FindFirstChild("BS_Achievements")
+    local event = awards and awards:FindFirstChild("BS_AwardAchievement")
+    if event then event:Fire(player, badgeName) end
+end
+local function resetChase(id)
+    if sequenceId ~= id then return end
+    activePlayer = nil
+    prompt.Enabled = true
+    door.CanCollide = true
+    door.Transparency = 0
+    humanoid:MoveTo(root.Position)
+    echoer:PivotTo(startPivot)
+end
+local function chase(player, id)
+    task.wait(Config.EchoerStartDelay)
+    humanoid.WalkSpeed = Config.EchoerSpeed
+    local started = os.clock()
+    while sequenceId == id and activePlayer == player and os.clock() - started < Config.ChaseSeconds do
+        local character = player.Character
+        local target = character and character:FindFirstChild("HumanoidRootPart")
+        local health = character and character:FindFirstChildOfClass("Humanoid")
+        if not target or not health or health.Health <= 0 then break end
+        local ok, path = pcall(function()
+            local p = PathfindingService:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=true})
+            p:ComputeAsync(root.Position, target.Position)
+            return p
+        end)
+        if ok and path.Status == Enum.PathStatus.Success then
+            local points = path:GetWaypoints()
+            if #points >= 2 then humanoid:MoveTo(points[2].Position) else humanoid:MoveTo(target.Position) end
+        else
+            humanoid:MoveTo(target.Position)
+        end
+        task.wait(0.45)
+    end
+    if sequenceId == id then
+        notify(player, "The railway falls silent. Try again.")
+        resetChase(id)
+    end
+end
+prompt.Triggered:Connect(function(player)
+    if activePlayer or completed[player.UserId] then return end
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp or (hrp.Position - lever.Position).Magnitude > Config.InteractionDistance + 3 then return end
+    activePlayer = player
+    sequenceId += 1
+    local id = sequenceId
+    prompt.Enabled = false
+    door.CanCollide = false
+    door.Transparency = 0.75
+    echoer:PivotTo(startPivot)
+    notify(player, "The lever moves. Something is coming. Reach the subway!")
+    task.spawn(chase, player, id)
+end)
+finish.Touched:Connect(function(hit)
+    local character = hit:FindFirstAncestorOfClass("Model")
+    local player = character and Players:GetPlayerFromCharacter(character)
+    if not player or player ~= activePlayer or completed[player.UserId] then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local health = character:FindFirstChildOfClass("Humanoid")
+    if not hrp or not health or health.Health <= 0 then return end
+    if (hrp.Position - finish.Position).Magnitude > 15 then return end
+    completed[player.UserId] = true
+    notify(player, "??? — Underground Railway discovered!")
+    award(player, "RailwaySecret")
+    award(player, "NarrowEscape")
+    resetChase(sequenceId)
+end)
+Players.PlayerRemoving:Connect(function(player)
+    completed[player.UserId] = nil
+    if activePlayer == player then resetChase(sequenceId) end
+end)
