@@ -1,0 +1,16 @@
+-- LocalScript. Voice chat is provided and controlled by Roblox, not enabled by this script.
+local Players = game:GetService("Players")
+local VoiceChatService = game:GetService("VoiceChatService")
+local player = Players.LocalPlayer
+local function checkVoice()
+    local ok, enabled = pcall(function()
+        return VoiceChatService:IsVoiceEnabledForUserIdAsync(player.UserId)
+    end)
+    if ok then
+        print("[Bloody Skinwalker] Roblox voice eligibility:", enabled and "eligible" or "not enabled")
+    else
+        warn("[Bloody Skinwalker] Voice eligibility unavailable; Roblox handles access.")
+    end
+end
+task.spawn(checkVoice)
+-- No recording, transcription, microphone activation, or privacy bypass.
