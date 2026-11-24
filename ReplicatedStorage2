@@ -1,0 +1,16 @@
+-- ModuleScript in ReplicatedStorage. All badge IDs must be replaced with published Roblox badge IDs.
+local Config = {}
+Config.Badges = {
+    RailwaySecret = 0, -- "???": lever -> Echoer chase -> subway
+    FirstWhisper = 0, -- approach Whisperer clue
+    NightExplorer = 0, -- explore 10 clues
+    NarrowEscape = 0, -- survive Echoer chase
+    QuietWitness = 0, -- discover Quiet Ambusher clue
+}
+Config.ChaseSeconds = 95
+Config.EchoerSpeed = 19
+Config.EchoerStartDelay = 2
+Config.InteractionDistance = 12
+Config.ClueThreshold = 10
+Config.ChatPrefix = "[Bloody Skinwalker]"
+return Config
