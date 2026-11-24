@@ -1,0 +1,9 @@
+-- Server Script: server-controlled chat channels and non-chat story notices.
+-- Roblox TextChatService handles filtering, privacy and age-based permissions.
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local notice = ReplicatedStorage:FindFirstChild("BS_StoryNotice") or Instance.new("RemoteEvent")
+notice.Name = "BS_StoryNotice"
+notice.Parent = ReplicatedStorage
+-- Default TextChatService channels are managed by Roblox. Do not disable filtering.
+-- Never relay unfiltered user messages using RemoteEvents.
