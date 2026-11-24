@@ -1,0 +1,28 @@
+-- Server Script. Server-only badge awards; no client requests to award arbitrary badges.
+local BadgeService = game:GetService("BadgeService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Config = require(ReplicatedStorage:WaitForChild("BS_ExpansionConfig"))
+
+local awardEvent = Instance.new("BindableEvent")
+awardEvent.Name = "BS_AwardAchievement"
+awardEvent.Parent = script
+
+local function award(player, badgeName)
+    if not player or not player:IsA("Player") or player.Parent ~= Players then return end
+    local badgeId = Config.Badges[badgeName]
+    if type(badgeId) ~= "number" or badgeId <= 0 then
+        warn("Badge not configured:", badgeName)
+        return
+    end
+    local ok, hasBadge = pcall(function()
+        return BadgeService:UserHasBadgeAsync(player.UserId, badgeId)
+    end)
+    if not ok or hasBadge then return end
+    local success, err = pcall(function()
+        BadgeService:AwardBadgeAsync(player.UserId, badgeId)
+    end)
+    if not success then warn("Badge award failed:", badgeName, err) end
+end
+awardEvent.Event:Connect(award)
+-- Other server scripts can locate script.BS_AwardAchievement and fire(player, badgeName).
