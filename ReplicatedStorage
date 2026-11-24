@@ -1,0 +1,19 @@
+-- Bloody Skinwalker (TM) | Shared configuration | ModuleScript
+local Config = {}
+Config.DataStoreName = "BloodySkinwalker_PlayerData_v1"
+Config.StartingCoins = 100
+Config.MaxStamina = 100
+Config.StaminaDrainPerSecond = 22
+Config.StaminaRecoveryPerSecond = 16
+Config.WalkSpeed = 14
+Config.SprintSpeed = 22
+Config.Shop = {
+    Lantern = {Price = 60, Description = "A portable forest lantern."},
+    TrailMarker = {Price = 35, Description = "A marker for your journey."},
+    MercyPendant = {Price = 150, Description = "A cosmetic symbol of perseverance."},
+}
+-- Set these to real badge IDs from YOUR experience before publishing.
+Config.Badges = {FirstSteps = 0, FirstPurchase = 0, Explorer = 0}
+Config.CollectibleReward = 15
+Config.CollectibleCooldown = 60
+return Config
