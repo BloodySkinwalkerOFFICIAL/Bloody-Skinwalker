@@ -1,0 +1,19 @@
+-- LocalScript: displays SERVER-authored story notices and optional chat prefix.
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local Config = require(ReplicatedStorage:WaitForChild("BS_ExpansionConfig"))
+local notice = ReplicatedStorage:WaitForChild("BS_StoryNotice")
+notice.OnClientEvent:Connect(function(message)
+    if type(message) ~= "string" then return end
+    -- Notices are generated only by trusted server scripts, not by player chat.
+    local channels = TextChatService:FindFirstChild("TextChannels")
+    local general = channels and channels:FindFirstChild("RBXGeneral")
+    if general then
+        general:DisplaySystemMessage(Config.ChatPrefix .. " " .. message)
+    else
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {Title="Bloody Skinwalker",Text=message,Duration=5})
+        end)
+    end
+end)
