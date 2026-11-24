@@ -1,0 +1,24 @@
+-- LocalScript. Smooth shoulder camera; toggle with V. Respect player camera controls.
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local active = false
+local OFFSET = Vector3.new(1.5, 1.3, 0)
+local function setMode(enabled)
+    active = enabled
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.CameraOffset = enabled and OFFSET or Vector3.zero
+    end
+end
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.V then setMode(not active) end
+end)
+player.CharacterAdded:Connect(function()
+    active = false
+end)
+-- Camera stays in Roblox's default Custom mode for accessibility and mouse/touch/gamepad support.
+-- Do not replace PlayerModule/CameraModule: this avoids overwriting Roblox updates.
