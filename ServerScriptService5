@@ -1,0 +1,38 @@
+-- Server Script. Place tagged clue Parts in Workspace/BS_Secrets.
+-- Names: WhisperClue, AmbusherClue, ExplorerClue (any number of ExplorerClue parts).
+local Players = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Config = require(ReplicatedStorage:WaitForChild("BS_ExpansionConfig"))
+local folder = workspace:WaitForChild("BS_Secrets")
+local visits = {}
+local function award(player, name)
+    local owner = ServerScriptService:FindFirstChild("BS_Achievements")
+    local event = owner and owner:FindFirstChild("BS_AwardAchievement")
+    if event then event:Fire(player, name) end
+end
+local function setup(part)
+    if not part:IsA("BasePart") then return end
+    local prompt = part:FindFirstChildOfClass("ProximityPrompt") or Instance.new("ProximityPrompt")
+    prompt.ActionText = "Investigate"
+    prompt.ObjectText = "Forest secret"
+    prompt.MaxActivationDistance = 10
+    prompt.Parent = part
+    prompt.Triggered:Connect(function(player)
+        local character = player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not root or (root.Position - part.Position).Magnitude > 13 then return end
+        local key = tostring(part)
+        visits[player] = visits[player] or {}
+        if visits[player][part] then return end
+        visits[player][part] = true
+        if part.Name == "WhisperClue" then award(player, "FirstWhisper") end
+        if part.Name == "AmbusherClue" then award(player, "QuietWitness") end
+        local count = 0
+        for _ in pairs(visits[player]) do count += 1 end
+        if count >= Config.ClueThreshold then award(player, "NightExplorer") end
+    end)
+end
+for _, child in ipairs(folder:GetDescendants()) do setup(child) end
+folder.DescendantAdded:Connect(setup)
+Players.PlayerRemoving:Connect(function(player) visits[player] = nil end)
