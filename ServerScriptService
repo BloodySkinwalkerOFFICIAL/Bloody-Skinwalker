@@ -1,0 +1,185 @@
+-- Bloody Skinwalker (TM) | Server Script | ServerScriptService
+-- Creates remotes, stores stats, validates shop purchases and forest collectibles.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local BadgeService = game:GetService("BadgeService")
+local Config = require(ReplicatedStorage:WaitForChild("BS_Config"))
+local store = DataStoreService:GetDataStore(Config.DataStoreName)
+local folder = ReplicatedStorage:FindFirstChild("BS_Remotes") or Instance.new("Folder")
+folder.Name = "BS_Remotes"
+folder.Parent = ReplicatedStorage
+local function remote(name)
+    local r = folder:FindFirstChild(name) or Instance.new("RemoteEvent")
+    r.Name = name
+    r.Parent = folder
+    return r
+end
+local purchaseRemote = remote("Purchase")
+local settingsRemote = remote("Settings")
+local notifyRemote = remote("Notify")
+local profiles = {}
+local cooldowns = {}
+local lastPurchase = {}
+local DEFAULT = {Coins = Config.StartingCoins, SurvivalTime = 0, Discoveries = 0, Purchases = 0,
+    Inventory = {}, Settings = {Music = true, Ambient = true, ReducedEffects = false}}
+local function copy(t)
+    local n = {}
+    for k,v in pairs(t) do n[k] = type(v)=="table" and copy(v) or v end
+    return n
+end
+local function safeData(raw)
+    local data = copy(DEFAULT)
+    if type(raw) ~= "table" then return data end
+    for _,key in ipairs({"Coins","SurvivalTime","Discoveries","Purchases"}) do
+        if type(raw[key]) == "number" and raw[key] >= 0 and raw[key] < 1e9 then data[key] = math.floor(raw[key]) end
+    end
+    if type(raw.Inventory) == "table" then
+        for item,owned in pairs(raw.Inventory) do
+            if Config.Shop[item] and owned == true then data.Inventory[item] = true end
+        end
+    end
+    if type(raw.Settings) == "table" then
+        for setting in pairs(data.Settings) do
+            if type(raw.Settings[setting]) == "boolean" then data.Settings[setting] = raw.Settings[setting] end
+        end
+    end
+    return data
+end
+local function awardBadge(player, badgeId)
+    if not badgeId or badgeId <= 0 then return end
+    task.spawn(function()
+        local ok,has = pcall(function() return BadgeService:UserHasBadgeAsync(player.UserId,badgeId) end)
+        if ok and not has then pcall(function() BadgeService:AwardBadgeAsync(player.UserId,badgeId) end) end
+    end)
+end
+local function sync(player)
+    local data = profiles[player]
+    if not data then return end
+    local stats = player:FindFirstChild("leaderstats")
+    if stats then
+        stats.Coins.Value = data.Coins
+        stats.Discoveries.Value = data.Discoveries
+        stats.SurvivalTime.Value = data.SurvivalTime
+    end
+    local inv = player:FindFirstChild("BS_Inventory")
+    if inv then
+        for item in pairs(Config.Shop) do inv:SetAttribute(item,data.Inventory[item] == true) end
+    end
+    local prefs = player:FindFirstChild("BS_Settings")
+    if prefs then for key,value in pairs(data.Settings) do prefs:SetAttribute(key,value) end end
+end
+local function save(player)
+    local data = profiles[player]
+    if not data then return end
+    local key = "player_" .. player.UserId
+    local snapshot = copy(data)
+    local ok,err = pcall(function()
+        store:UpdateAsync(key,function(old)
+            -- Session's validated state is authoritative; do not accept client-supplied data.
+            return snapshot
+        end)
+    end)
+    if not ok then warn("[BS] Save failed for " .. player.Name .. ": " .. tostring(err)) end
+end
+Players.PlayerAdded:Connect(function(player)
+    local loaded
+    local ok,err = pcall(function() loaded = store:GetAsync("player_" .. player.UserId) end)
+    if not ok then warn("[BS] Load failed for " .. player.Name .. ": " .. tostring(err)) end
+    profiles[player] = safeData(loaded)
+    local stats = Instance.new("Folder"); stats.Name="leaderstats"; stats.Parent=player
+    for _,name in ipairs({"Coins","Discoveries","SurvivalTime"}) do
+        local value=Instance.new("IntValue"); value.Name=name; value.Parent=stats
+    end
+    local inv=Instance.new("Folder"); inv.Name="BS_Inventory"; inv.Parent=player
+    local prefs=Instance.new("Folder"); prefs.Name="BS_Settings"; prefs.Parent=player
+    sync(player)
+    awardBadge(player,Config.Badges.FirstSteps)
+end)
+Players.PlayerRemoving:Connect(function(player)
+    save(player)
+    profiles[player]=nil; cooldowns[player]=nil; lastPurchase[player]=nil
+end)
+game:BindToClose(function()
+    for _,player in ipairs(Players:GetPlayers()) do task.spawn(save,player) end
+    task.wait(3)
+end)
+purchaseRemote.OnServerEvent:Connect(function(player,item)
+    local data=profiles[player]
+    if not data or type(item)~="string" or not Config.Shop[item] then return end
+    local now=os.clock()
+    if lastPurchase[player] and now-lastPurchase[player]<0.4 then return end
+    lastPurchase[player]=now
+    if data.Inventory[item] then notifyRemote:FireClient(player,"Already owned: "..item); return end
+    local price=Config.Shop[item].Price
+    if data.Coins<price then notifyRemote:FireClient(player,"Not enough coins"); return end
+    data.Coins-=price; data.Inventory[item]=true; data.Purchases+=1
+    sync(player)
+    notifyRemote:FireClient(player,"Purchased "..item.."!")
+    awardBadge(player,Config.Badges.FirstPurchase)
+end)
+settingsRemote.OnServerEvent:Connect(function(player,key,value)
+    local data=profiles[player]
+    if not data or type(key)~="string" or type(value)~="boolean" then return end
+    if data.Settings[key] == nil then return end
+    data.Settings[key]=value
+    sync(player)
+end)
+-- Any Part with attribute BS_Collectible=true gets a proximity prompt.
+-- Reward is server-side, proximity-checked, and rate-limited per player + part.
+local function attachCollectible(part)
+    if not part:IsA("BasePart") or part:GetAttribute("BS_Collectible")~=true then return end
+    if part:FindFirstChild("BS_CollectPrompt") then return end
+    local prompt=Instance.new("ProximityPrompt")
+    prompt.Name="BS_CollectPrompt"; prompt.ActionText="Investigate"; prompt.ObjectText="Forest clue"
+    prompt.MaxActivationDistance=10; prompt.HoldDuration=0.6; prompt.Parent=part
+    prompt.Triggered:Connect(function(player)
+        local data=profiles[player]
+        local char=player.Character
+        local root=char and char:FindFirstChild("HumanoidRootPart")
+        if not data or not root or (root.Position-part.Position).Magnitude>14 then return end
+        cooldowns[player]=cooldowns[player] or {}
+        local now=os.clock()
+        if cooldowns[player][part] and now-cooldowns[player][part]<Config.CollectibleCooldown then return end
+        cooldowns[player][part]=now
+        data.Coins+=Config.CollectibleReward
+        data.Discoveries+=1
+        sync(player)
+        notifyRemote:FireClient(player,"Forest clue found! +"..Config.CollectibleReward.." coins")
+        if data.Discoveries>=10 then awardBadge(player,Config.Badges.Explorer) end
+    end)
+end
+for _,obj in ipairs(workspace:GetDescendants()) do attachCollectible(obj) end
+workspace.DescendantAdded:Connect(function(obj)
+    task.defer(function() if obj.Parent then attachCollectible(obj) end end)
+end)
+workspace.DescendantRemoving:Connect(function(obj)
+    for _,byPart in pairs(cooldowns) do byPart[obj]=nil end
+end)
+for _,obj in ipairs(workspace:GetDescendants()) do
+    if obj:IsA("BasePart") then
+        obj:GetAttributeChangedSignal("BS_Collectible"):Connect(function() attachCollectible(obj) end)
+    end
+end
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("BasePart") then
+        obj:GetAttributeChangedSignal("BS_Collectible"):Connect(function() attachCollectible(obj) end)
+    end
+end)
+task.spawn(function()
+    while true do
+        task.wait(1)
+        for player,data in pairs(profiles) do
+            if player.Parent and player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+                local humanoid=player.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid.Health>0 then data.SurvivalTime+=1; sync(player) end
+            end
+        end
+    end
+end)
+task.spawn(function()
+    while true do
+        task.wait(90)
+        for player in pairs(profiles) do task.spawn(save,player) end
+    end
+end)
