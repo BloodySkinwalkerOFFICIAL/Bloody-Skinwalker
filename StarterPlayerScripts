@@ -1,0 +1,155 @@
+-- Bloody Skinwalker (TM) | LocalScript | StarterPlayerScripts
+-- Builds a complete HUD at runtime; no external UI assets required.
+local Players=game:GetService("Players")
+local UIS=game:GetService("UserInputService")
+local RunService=game:GetService("RunService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local player=Players.LocalPlayer
+local Config=require(ReplicatedStorage:WaitForChild("BS_Config"))
+local remotes=ReplicatedStorage:WaitForChild("BS_Remotes")
+local stats=player:WaitForChild("leaderstats")
+local inventory=player:WaitForChild("BS_Inventory")
+local prefs=player:WaitForChild("BS_Settings")
+local gui=Instance.new("ScreenGui")
+gui.Name="BloodySkinwalkerHUD"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=false; gui.Parent=player:WaitForChild("PlayerGui")
+local C={bg=Color3.fromRGB(18,20,22),panel=Color3.fromRGB(29,32,35),red=Color3.fromRGB(157,36,46),text=Color3.fromRGB(235,233,228),muted=Color3.fromRGB(169,171,174)}
+local function corner(obj,r)
+    local u=Instance.new("UICorner"); u.CornerRadius=UDim.new(0,r or 9); u.Parent=obj
+end
+local function frame(parent,name,size,pos)
+    local f=Instance.new("Frame"); f.Name=name; f.Size=size; f.Position=pos; f.BackgroundColor3=C.panel; f.BorderSizePixel=0; f.Parent=parent; corner(f)
+    return f
+end
+local function label(parent,text,size,pos,txtSize)
+    local l=Instance.new("TextLabel"); l.BackgroundTransparency=1; l.Text=text; l.Size=size; l.Position=pos
+    l.TextColor3=C.text; l.Font=Enum.Font.Gotham; l.TextSize=txtSize or 16
+    l.TextXAlignment=Enum.TextXAlignment.Left; l.TextWrapped=true; l.Parent=parent
+    return l
+end
+local function button(parent,text,size,pos,fn)
+    local b=Instance.new("TextButton"); b.Text=text; b.Size=size; b.Position=pos
+    b.BackgroundColor3=C.red; b.TextColor3=C.text; b.Font=Enum.Font.GothamBold; b.TextSize=14
+    b.BorderSizePixel=0; b.Parent=parent; corner(b,7)
+    b.MouseButton1Click:Connect(fn)
+    return b
+end
+local top=frame(gui,"Stats",UDim2.fromOffset(320,112),UDim2.fromOffset(15,15))
+label(top,"BLOODY SKINWALKER",UDim2.fromOffset(290,28),UDim2.fromOffset(12,8),18)
+local coins=label(top,"Coins: 0",UDim2.fromOffset(145,22),UDim2.fromOffset(12,40))
+local discoveries=label(top,"Clues: 0",UDim2.fromOffset(145,22),UDim2.fromOffset(170,40))
+local survived=label(top,"Survived: 0s",UDim2.fromOffset(285,22),UDim2.fromOffset(12,73))
+local function updateStats()
+    coins.Text="Coins: "..stats.Coins.Value
+    discoveries.Text="Clues: "..stats.Discoveries.Value
+    survived.Text="Survived: "..stats.SurvivalTime.Value.."s"
+end
+for _,name in ipairs({"Coins","Discoveries","SurvivalTime"}) do stats[name].Changed:Connect(updateStats) end
+updateStats()
+local barBack=frame(gui,"StaminaBar",UDim2.fromOffset(250,30),UDim2.new(0.5,-125,1,-50))
+local bar=frame(barBack,"Fill",UDim2.fromScale(1,1),UDim2.fromScale(0,0)); bar.BackgroundColor3=C.red
+local barText=label(barBack,"STAMINA 100",UDim2.fromScale(1,1),UDim2.fromScale(0,0),14)
+barText.TextXAlignment=Enum.TextXAlignment.Center
+local nav=frame(gui,"Navigation",UDim2.fromOffset(300,48),UDim2.new(1,-315,0,15))
+local content=frame(gui,"Content",UDim2.fromOffset(340,345),UDim2.new(1,-355,0,72))
+content.Visible=false
+local current=""
+local function clearContent()
+    for _,child in ipairs(content:GetChildren()) do if not child:IsA("UICorner") then child:Destroy() end end
+end
+local function heading(title)
+    label(content,title,UDim2.fromOffset(300,32),UDim2.fromOffset(12,10),19)
+end
+local function openPanel(name)
+    if content.Visible and current==name then content.Visible=false; return end
+    current=name; content.Visible=true; clearContent(); heading(name)
+    if name=="SHOP" then
+        local i=0
+        for _,item in ipairs({"Lantern","TrailMarker","MercyPendant"}) do
+            i+=1
+            local itemInfo=Config.Shop[item]
+            local y=45+(i-1)*85
+            label(content,item.." | "..itemInfo.Price.." coins",UDim2.fromOffset(300,23),UDim2.fromOffset(12,y),14)
+            label(content,itemInfo.Description,UDim2.fromOffset(310,23),UDim2.fromOffset(12,y+22),12)
+            local buy=button(content,"BUY",UDim2.fromOffset(90,26),UDim2.fromOffset(235,y+48),function()
+                remotes.Purchase:FireServer(item)
+            end)
+            local function refresh()
+                buy.Text=inventory:GetAttribute(item) and "OWNED" or "BUY"
+                buy.Active=not inventory:GetAttribute(item)
+            end
+            inventory:GetAttributeChangedSignal(item):Connect(refresh)
+            refresh()
+        end
+    elseif name=="SETTINGS" then
+        local settings={{"Music","Music"},{"Ambient","Ambient sound"},{"ReducedEffects","Reduced effects"}}
+        for i,entry in ipairs(settings) do
+            local key,display=entry[1],entry[2]
+            local y=50+(i-1)*72
+            label(content,display,UDim2.fromOffset(180,32),UDim2.fromOffset(12,y),15)
+            local b
+            local function refresh() if b and b.Parent then b.Text=prefs:GetAttribute(key) and "ON" or "OFF" end end
+            b=button(content,"",UDim2.fromOffset(90,32),UDim2.fromOffset(230,y),function()
+                remotes.Settings:FireServer(key,not prefs:GetAttribute(key))
+            end)
+            prefs:GetAttributeChangedSignal(key):Connect(refresh)
+            refresh()
+        end
+        label(content,"Settings are saved. Connect your own sound and effect scripts to these preferences.",UDim2.fromOffset(310,52),UDim2.fromOffset(12,265),12)
+    elseif name=="ACHIEVEMENTS" then
+        local achievements={
+            {"First Steps","Join the forest",true},
+            {"First Purchase","Buy a shop item",false},
+            {"Explorer","Investigate 10 clues",stats.Discoveries.Value>=10},
+        }
+        for i,a in ipairs(achievements) do
+            local status=(a[3] and "Complete" or "In progress")
+            label(content,a[1].." - "..status.."\n"..a[2],UDim2.fromOffset(312,62),UDim2.fromOffset(12,45+(i-1)*78),14)
+        end
+        label(content,"Badge awards require your published badge IDs in BS_Config.",UDim2.fromOffset(310,44),UDim2.fromOffset(12,285),12)
+    elseif name=="INVENTORY" then
+        local y=50
+        for _,item in ipairs({"Lantern","TrailMarker","MercyPendant"}) do
+            label(content,item..": "..(inventory:GetAttribute(item) and "Owned" or "Not owned"),UDim2.fromOffset(305,35),UDim2.fromOffset(12,y),15)
+            y+=55
+        end
+        label(content,"Inventory tracks ownership. Equip behavior is a future extension.",UDim2.fromOffset(305,55),UDim2.fromOffset(12,245),12)
+    end
+end
+button(nav,"SHOP",UDim2.fromOffset(68,34),UDim2.fromOffset(7,7),function() openPanel("SHOP") end)
+button(nav,"BAG",UDim2.fromOffset(68,34),UDim2.fromOffset(80,7),function() openPanel("INVENTORY") end)
+button(nav,"BADGES",UDim2.fromOffset(68,34),UDim2.fromOffset(153,7),function() openPanel("ACHIEVEMENTS") end)
+button(nav,"OPTIONS",UDim2.fromOffset(68,34),UDim2.fromOffset(226,7),function() openPanel("SETTINGS") end)
+local toast=label(gui,"",UDim2.fromOffset(350,45),UDim2.new(0.5,-175,0,135),15)
+toast.TextXAlignment=Enum.TextXAlignment.Center
+local toastCounter=0
+remotes.Notify.OnClientEvent:Connect(function(message)
+    toastCounter+=1; local id=toastCounter; toast.Text=tostring(message)
+    task.delay(3,function() if toastCounter==id then toast.Text="" end end)
+end)
+-- Keyboard Shift and a touch button sprint; server still controls currency/rewards.
+local stamina=Config.MaxStamina
+local shiftDown=false
+local touchSprint=false
+local touchButton=button(gui,"SPRINT",UDim2.fromOffset(92,42),UDim2.new(1,-110,1,-105),function()
+    touchSprint=not touchSprint
+end)
+touchButton.Visible=UIS.TouchEnabled
+UIS.InputBegan:Connect(function(input,processed)
+    if not processed and (input.KeyCode==Enum.KeyCode.LeftShift or input.KeyCode==Enum.KeyCode.RightShift) then shiftDown=true end
+end)
+UIS.InputEnded:Connect(function(input)
+    if input.KeyCode==Enum.KeyCode.LeftShift or input.KeyCode==Enum.KeyCode.RightShift then shiftDown=false end
+end)
+RunService.Heartbeat:Connect(function(dt)
+    local character=player.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local moving=humanoid.MoveDirection.Magnitude>0.1
+    local sprinting=(shiftDown or touchSprint) and moving and stamina>0 and humanoid.Health>0
+    if sprinting then stamina=math.max(0,stamina-Config.StaminaDrainPerSecond*dt)
+    else stamina=math.min(Config.MaxStamina,stamina+Config.StaminaRecoveryPerSecond*dt) end
+    humanoid.WalkSpeed=sprinting and Config.SprintSpeed or Config.WalkSpeed
+    bar.Size=UDim2.fromScale(stamina/Config.MaxStamina,1)
+    barText.Text="STAMINA "..math.floor(stamina)
+    if touchButton.Visible then touchButton.Text=touchSprint and "STOP" or "SPRINT" end
+end)
